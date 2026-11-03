@@ -1,4 +1,4 @@
-const CACHE = "cien-aa5ef362a8";
+const CACHE = "cien-3dd32ebd62";
 const FILES = ["./", "index.html", "manifest.webmanifest", "icono-192.png", "icono-512.png"];
 self.addEventListener("install", e => e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting())));
 self.addEventListener("activate", e => e.waitUntil(

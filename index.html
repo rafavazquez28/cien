@@ -172,6 +172,34 @@ a.link{display:flex;align-items:center;justify-content:center;text-decoration:no
 .confeti{position:fixed;top:-20px;width:11px;height:16px;z-index:30;pointer-events:none;border-radius:2px;animation:caer linear forwards}
 @keyframes caer{to{transform:translateY(110vh) rotate(720deg)}}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}.confeti{display:none}}
+
+/* Respuestas grandes que se pueden tocar, y crucigrama como un tablero de verdad. */
+.slots{grid-auto-rows:minmax(3.6rem,auto);gap:.5rem}
+.slot{font:800 1.2rem/1.15 var(--display);padding:.4rem .7rem;border-radius:14px;box-shadow:var(--pop);text-align:left;width:100%;min-height:0;cursor:pointer}
+.slot .t{flex:1;font-size:1.05rem;letter-spacing:.04em;overflow-wrap:anywhere}
+.slot.hit .t{font-size:1.2rem}
+.slot.hit .t{letter-spacing:0}
+.slot .p{font-size:1rem}
+.slot:not(.hit):active{transform:translateY(3px);box-shadow:none}
+.slot .tap{font-size:.95rem;margin-left:auto;margin-right:.4rem;opacity:.7}
+.lp-boxes{display:flex;flex-wrap:wrap;gap:.3rem;justify-content:center}
+.lp-box{width:2.3rem;height:2.6rem;display:flex;align-items:center;justify-content:center;border:var(--edge);border-radius:9px;background:var(--surface);font:900 1.35rem var(--display)}
+.lp-box.fixed{background:var(--word)}
+.lp-gap{width:.8rem}
+.lp-boxes.shake{animation:shake .3s}
+.lp-pool{display:grid;grid-template-columns:repeat(auto-fill,minmax(2.7rem,1fr));gap:.4rem}
+.lp-pool button{height:2.9rem;border:var(--edge);border-radius:10px;background:var(--sun);color:var(--sun-ink);font:900 1.35rem var(--display);box-shadow:var(--pop)}
+.lp-pool button:disabled{opacity:.2;box-shadow:none}
+.boardbox{display:flex;overflow:auto;background:var(--surface);border:var(--edge);border-radius:16px;box-shadow:var(--pop);padding:8px;align-items:flex-start;justify-content:flex-start}
+.board{margin:auto}
+.cell.on{box-shadow:0 0 0 2px var(--ink);border-radius:6px;background:var(--surface)}
+.cell.on.word{background:var(--word)}
+.cell.on.solved{background:var(--primary);color:var(--on-primary)}
+.cell.on.cur{background:var(--sun);color:var(--sun-ink)}
+.cell.on.wrong{background:var(--bad);color:var(--on-bad)}
+.cell .n{font-weight:800}
+.clue span{font-size:1.12rem;font-weight:700}
+.clue span b{background:var(--primary);color:var(--on-primary);border-radius:8px;padding:.05rem .4rem;margin-right:.35rem;white-space:nowrap}
 </style>
 
 <link rel="manifest" href="manifest.webmanifest"><meta name="theme-color" content="#1565d8"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="100%"><link rel="apple-touch-icon" href="icono-192.png"><style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}</style></head><body><div id="app"></div>
@@ -670,7 +698,7 @@ function playSurvey(i) {
   function draw() {
     pick("sl").innerHTML = L.a.map((a, ix) => {
       const hit = found.has(ix);
-      return `<div class="slot ${hit ? "hit" : ""}"><span class="t">${esc(hit ? a.t : mask(a, ix))}</span><span class="p">${a.p}%</span></div>`;
+      return `<button type="button" class="slot ${hit ? "hit" : ""}" data-ix="${ix}" aria-label="${hit ? esc(a.t) : `Respuesta de ${a.p}%, toca para ver letras`}"><span class="t">${esc(hit ? a.t : mask(a, ix))}</span><span class="p">${a.p}%</span></button>`;
     }).join("");
     const sum = [...found].reduce((x, ix) => x + L.a[ix].p, 0);
     pick("pct").textContent = sum + "%";
@@ -690,6 +718,64 @@ function playSurvey(i) {
     draw();
     checkDone();
   }
+  /* Al tocar una respuesta: sus letras mezcladas con otras tantas de relleno, para ir formándola. */
+  const pools = {};
+  function letterPanel(ix) {
+    const a = L.a[ix], letters = lettersOf(a.t).split("");
+    const need = letters.map((_, k) => k).filter(k => !revealed[ix].includes(k));
+    if (!pools[ix]) {
+      const filler = "EAOSRNIDLCTUMPBGVYHFZJÑ";
+      const extra = Array.from({length: Math.min(need.length, 8)}, () => filler[Math.floor(Math.random() * filler.length)]);
+      pools[ix] = need.map(k => letters[k]).concat(extra).sort(() => Math.random() - .5);
+    }
+    const pool = pools[ix], placed = [];
+    const box = sheet(`
+      <h3>Respuesta de ${a.p}%</h3>
+      <div class="lp-boxes" id="lb"></div>
+      <div class="lp-pool" id="lpp">${pool.map((c, k) => `<button type="button" data-k="${k}">${c}</button>`).join("")}</div>
+      <div class="row"><button class="btn soft" id="lbk">Borrar</button><button class="btn" id="lok">Cerrar</button></div>`);
+    function drawBoxes() {
+      let n = 0, used = 0;
+      box.querySelector("#lb").innerHTML = [...a.t].map(c => {
+        if (c === " ") return `<span class="lp-gap"></span>`;
+        const k = n++;
+        if (revealed[ix].includes(k)) return `<span class="lp-box fixed">${letters[k]}</span>`;
+        const p = placed[used++];
+        return `<span class="lp-box">${p === undefined ? "" : pool[p]}</span>`;
+      }).join("");
+      box.querySelectorAll("#lpp button").forEach(b => { b.disabled = placed.includes(+b.dataset.k); });
+    }
+    box.querySelector("#lpp").onclick = ev => {
+      const b = ev.target.closest("button");
+      if (!b || b.disabled || placed.length >= need.length) return;
+      placed.push(+b.dataset.k);
+      drawBoxes();
+      if (placed.length < need.length) return;
+      if (placed.every((p, j) => pool[p] === letters[need[j]])) {
+        setTimeout(() => {
+          box.remove();
+          sfx("hit");
+          say(`¡Bien! +${a.p}%`, 1200);
+          /* Con letras la ayuda es grande: cuenta como pista, aunque no cuesta monedas. */
+          hints++;
+          missed = false;
+          hit(ix);
+        }, 250);
+      } else {
+        sfx("wrong");
+        const row = box.querySelector("#lb");
+        row.classList.remove("shake"); void row.offsetWidth; row.classList.add("shake");
+        setTimeout(() => { placed.length = 0; drawBoxes(); }, 650);
+      }
+    };
+    box.querySelector("#lbk").onclick = () => { placed.pop(); drawBoxes(); };
+    box.querySelector("#lok").onclick = () => box.remove();
+    drawBoxes();
+  }
+  pick("sl").onclick = ev => {
+    const b = ev.target.closest(".slot");
+    if (b && !found.has(+b.dataset.ix)) letterPanel(+b.dataset.ix);
+  };
   pick("f").onsubmit = e => {
     e.preventDefault();
     const raw = input.value;
@@ -777,9 +863,9 @@ function playCross(i) {
     <div class="top"><button class="back" id="b">←</button><div class="where">${i === DAY ? t.name : `Nivel ${i + 1} · ${t.name}`}<small>${esc(L.t)}</small></div>${coinsHtml()}</div>
     <div class="boardbox" id="bx"><input class="ghost" id="ci" type="text" aria-label="Escribe la letra" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" enterkeyhint="next"><div class="board" id="bd" style="grid-template-columns:repeat(${L.w},var(--c))"></div></div>
     <div class="tools">
-      <button class="btn soft" id="all">Ver pistas</button>
-      <button class="btn soft" id="hl">Letra · ${HINT}</button>
-      <button class="btn soft" id="ck">Revisar</button>
+      <button class="btn soft" id="all">📋 Pistas</button>
+      <button class="btn soft" id="hl" aria-label="Revelar una letra por ${HINT} monedas">💡 Letra</button>
+      <button class="btn soft" id="ck">✔️ Revisar</button>
     </div>
     <div class="clue"><button id="prev" aria-label="Pista anterior">‹</button><span id="cl"></span><button id="nextc" aria-label="Pista siguiente">›</button></div>
   `);
@@ -796,9 +882,10 @@ function playCross(i) {
     board.appendChild(el);
   }
   function fit() {
-    const gap = 3;
-    const size = Math.min((holder.clientWidth - gap * (L.w - 1)) / L.w, (holder.clientHeight - gap * (L.h - 1)) / L.h, 56);
-    board.style.setProperty("--c", Math.max(14, Math.floor(size)) + "px");
+    const gap = 3, room = 16;
+    const size = Math.min((holder.clientWidth - room - gap * (L.w - 1)) / L.w, (holder.clientHeight - room - gap * (L.h - 1)) / L.h, 60);
+    /* Nunca casillas diminutas: si no caben, el tablero se desliza con el dedo. */
+    board.style.setProperty("--c", Math.max(34, Math.floor(size)) + "px");
   }
   const watcher = new ResizeObserver(fit);
   watcher.observe(holder);
@@ -808,6 +895,13 @@ function playCross(i) {
   const filled = () => Object.values(cells).every(c => c.val);
   const allOk = () => Object.values(cells).every(c => c.val === c.sol);
 
+  function reveal() {
+    const el = cells[cur.cells[pos]].el, hr = holder.getBoundingClientRect(), r = el.getBoundingClientRect();
+    if (r.left < hr.left + 8) holder.scrollLeft -= hr.left + 8 - r.left;
+    else if (r.right > hr.right - 8) holder.scrollLeft += r.right - hr.right + 8;
+    if (r.top < hr.top + 8) holder.scrollTop -= hr.top + 8 - r.top;
+    else if (r.bottom > hr.bottom - 8) holder.scrollTop += r.bottom - hr.bottom + 8;
+  }
   function draw() {
     Object.entries(cells).forEach(([k, c]) => {
       const inWord = cur.cells.includes(k), isCur = cur.cells[pos] === k;
@@ -815,6 +909,7 @@ function playCross(i) {
       c.el.querySelector(".l").textContent = c.val;
     });
     pick("cl").innerHTML = `<span><b>${cur.n} ${cur.d === 0 ? "→" : "↓"}</b> ${esc(cur.clue)} (${cur.word.length})</span>`;
+    reveal();
   }
   function select(e, p) {
     cur = e;
@@ -900,8 +995,8 @@ function playCross(i) {
       nx += dx; ny += dy;
     }
   }
-  /* Elige la casilla al poner el dedo, antes de que el teclado mueva el tablero; si el toque cae
-     en un hueco, vale la casilla más cercana. */
+  /* Elige la casilla al levantar el dedo sin haberlo arrastrado; si el toque cae en un hueco,
+     vale la casilla más cercana. */
   function cellAt(ev) {
     const direct = ev.target.closest && ev.target.closest(".cell.on");
     if (direct) return direct;
@@ -913,7 +1008,11 @@ function playCross(i) {
     });
     return best && bestD < best.offsetWidth * 1.2 ? best : null;
   }
-  holder.addEventListener("pointerdown", ev => {
+  let downAt = null;
+  holder.addEventListener("pointerdown", ev => { downAt = [ev.clientX, ev.clientY]; });
+  holder.addEventListener("pointerup", ev => {
+    /* Si el dedo se ha movido, era para desplazar el tablero, no para elegir casilla. */
+    if (!downAt || Math.hypot(ev.clientX - downAt[0], ev.clientY - downAt[1]) > 10) return;
     const el = cellAt(ev);
     if (!el) return;
     const k = el.dataset.k, here = entries.filter(e => e.cells.includes(k));
